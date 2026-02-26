@@ -76,9 +76,6 @@ func TestGetLedgerEntriesRetriesOnRateLimit(t *testing.T) {
 	testKey := validKeys[0]
 
 	var calls int32
-	// validKey is a base64-encoded XDR LedgerKey (account type) that passes
-	// the cryptographic verification step in getLedgerEntriesAttempt.
-	const validKey = "AAAAAAAAAABqbUHHOUNTgIZpeXjQQHgNYcXOazSxcCrhBCh2M4Od7g=="
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if atomic.AddInt32(&calls, 1) == 1 {

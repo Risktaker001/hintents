@@ -1352,4 +1352,3 @@ func (c *Client) CheckStaleness(ctx context.Context, network string) error {
 
 	return nil
 }
-
