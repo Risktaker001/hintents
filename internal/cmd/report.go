@@ -22,8 +22,9 @@ var (
 )
 
 var reportCmd = &cobra.Command{
-	Use:   "report",
-	Short: "Generate debugging reports from traces",
+	Use:     "report",
+	GroupID: "utility",
+	Short:   "Generate debugging reports from traces",
 	Long: `Generate professional PDF or HTML reports from execution traces.
 
 Reports include:

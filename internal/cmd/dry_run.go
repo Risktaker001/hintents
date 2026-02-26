@@ -28,8 +28,9 @@ var (
 // provides a deterministic estimate based on the simulator's reported resource usage, intended as a
 // safe lower bound / guidance for setting fee/budget.
 var dryRunCmd = &cobra.Command{
-	Use:   "dry-run <tx.xdr>",
-	Short: "Pre-submission dry run to estimate Soroban transaction cost",
+	Use:     "dry-run <tx.xdr>",
+	GroupID: "testing",
+	Short:   "Pre-submission dry run to estimate Soroban transaction cost",
 	Long: `Replay a local transaction envelope (not yet on chain) against current network state.
 
 This command:

@@ -19,10 +19,11 @@ var (
 )
 
 var xdrCmd = &cobra.Command{
-	Use:   "xdr",
-	Short: "Format and decode XDR data",
-	Long:  `Decode and format XDR structures to JSON or table format for easy inspection.`,
-	RunE:  xdrExec,
+	Use:     "xdr",
+	GroupID: "utility",
+	Short:   "Format and decode XDR data",
+	Long:    `Decode and format XDR structures to JSON or table format for easy inspection.`,
+	RunE:    xdrExec,
 }
 
 func xdrExec(cmd *cobra.Command, args []string) error {

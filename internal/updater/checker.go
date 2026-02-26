@@ -179,7 +179,7 @@ func (c *Checker) compareVersions(current, latest string) (bool, error) {
 // displayNotification prints the update message to stderr
 func (c *Checker) displayNotification(latestVersion string) {
 	message := fmt.Sprintf(
-		"\n[INFO] A new version (%s) is available! Run 'go install github.com/dotandev/hintents/cmd/erst@latest' to update.\n\n",
+		"\n[INFO] Upgrade available: %s. Run 'go install github.com/dotandev/hintents/cmd/erst@latest' to update.\n\n",
 		latestVersion,
 	)
 	fmt.Fprint(os.Stderr, message)
@@ -222,6 +222,33 @@ func (c *Checker) isUpdateCheckDisabled() bool {
 	}
 
 	return false
+}
+
+// ShowBannerFromCache prints an upgrade banner if a newer cached version exists.
+func ShowBannerFromCache(currentVersion string) {
+	ShowBannerFromCacheWithCacheDir(currentVersion, getCacheDir())
+}
+
+// ShowBannerFromCacheWithCacheDir is a testable variant of ShowBannerFromCache.
+func ShowBannerFromCacheWithCacheDir(currentVersion, cacheDir string) {
+	cacheFile := filepath.Join(cacheDir, "last_update_check")
+	data, err := os.ReadFile(cacheFile)
+	if err != nil {
+		return
+	}
+
+	var cache CacheData
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return
+	}
+
+	checker := &Checker{currentVersion: currentVersion, cacheDir: cacheDir}
+	needsUpdate, err := checker.compareVersions(currentVersion, cache.LatestVersion)
+	if err != nil || !needsUpdate {
+		return
+	}
+
+	checker.displayNotification(cache.LatestVersion)
 }
 
 // getConfigPath returns the path to the config file

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { open, type FileHandle } from 'fs/promises';
 import { RPCConfig } from '../config/rpc-config';
 import { getLogger, LogCategory } from '../utils/logger';
 
@@ -17,11 +18,17 @@ interface RPCEndpoint {
     averageDuration: number;
 }
 
+export interface WasmDeployChunkOptions {
+    chunkSize?: number;
+    pathsField?: string;
+}
+
 export class FallbackRPCClient {
     private endpoints: RPCEndpoint[];
     private currentIndex: number = 0;
     private config: RPCConfig;
     private clients: Map<string, AxiosInstance> = new Map();
+    private static readonly DEFAULT_WASM_PATH_CHUNK_SIZE = 64;
 
     constructor(config: RPCConfig) {
         const logger = getLogger();
@@ -138,6 +145,39 @@ export class FallbackRPCClient {
         const totalDuration = Date.now() - startTime;
         logger.error(`All RPC endpoints failed after ${totalDuration}ms`);
         throw new Error(`All RPC endpoints failed: ${lastError?.message}`);
+    }
+
+    /**
+     * Deploy massive contract sets by chunking wasm file paths into multiple RPC requests.
+     * This keeps payloads bounded when network/provider limits are strict.
+     */
+    async deployWasmPathsChunked<T = any>(
+        path: string,
+        wasmPaths: string[],
+        basePayload: Record<string, any> = {},
+        options: WasmDeployChunkOptions = {},
+    ): Promise<T[]> {
+        if (wasmPaths.length === 0) {
+            return [];
+        }
+
+        await this.validateWasmPaths(wasmPaths);
+
+        const field = options.pathsField || 'wasm_paths';
+        const chunkSize = this.resolveWasmPathChunkSize(options.chunkSize);
+        const chunks = this.chunkStringSlice(wasmPaths, chunkSize);
+        const results: T[] = [];
+
+        for (const chunk of chunks) {
+            const payload = {
+                ...basePayload,
+                [field]: chunk,
+            };
+            const response = await this.request<T>(path, { method: 'POST', data: payload });
+            results.push(response);
+        }
+
+        return results;
     }
 
     /**
@@ -284,6 +324,75 @@ export class FallbackRPCClient {
         }
 
         return false;
+    }
+
+    private resolveWasmPathChunkSize(override?: number): number {
+        if (override && Number.isInteger(override) && override > 0) {
+            return override;
+        }
+
+        const envRaw = process.env.ERST_WASM_PATH_CHUNK_SIZE;
+        if (envRaw) {
+            const parsed = parseInt(envRaw, 10);
+            if (Number.isInteger(parsed) && parsed > 0) {
+                return parsed;
+            }
+        }
+
+        return FallbackRPCClient.DEFAULT_WASM_PATH_CHUNK_SIZE;
+    }
+
+    private chunkStringSlice(values: string[], chunkSize: number): string[][] {
+        if (values.length === 0) {
+            return [];
+        }
+
+        const chunks: string[][] = [];
+        for (let i = 0; i < values.length; i += chunkSize) {
+            chunks.push(values.slice(i, i + chunkSize));
+        }
+        return chunks;
+    }
+
+    private async validateWasmPaths(wasmPaths: string[]): Promise<void> {
+        for (const wasmPath of wasmPaths) {
+            await this.validateWasmFile(wasmPath);
+        }
+    }
+
+    private async validateWasmFile(wasmPath: string): Promise<void> {
+        let handle: FileHandle | undefined;
+
+        try {
+            handle = await open(wasmPath, 'r');
+            const header = new Uint8Array(4);
+            const { bytesRead } = await handle.read(header, 0, header.length, 0);
+            const hasWasmMagic =
+                header[0] === 0x00 &&
+                header[1] === 0x61 &&
+                header[2] === 0x73 &&
+                header[3] === 0x6d;
+
+            if (bytesRead < 4 || !hasWasmMagic) {
+                throw new Error(
+                    `Invalid WASM binary at "${wasmPath}": expected file to start with \\0asm`,
+                );
+            }
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('expected file to start with \\0asm')) {
+                throw error;
+            }
+
+            if (error instanceof Error) {
+                throw new Error(`Failed to read WASM file "${wasmPath}": ${error.message}`);
+            }
+
+            throw new Error(`Failed to read WASM file "${wasmPath}"`);
+        } finally {
+            if (handle) {
+                await handle.close();
+            }
+        }
     }
 
     /**

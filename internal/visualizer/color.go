@@ -5,30 +5,38 @@ package visualizer
 
 import (
 	"os"
-	"strings"
 
-	"github.com/dotandev/hintents/internal/terminal"
+	"github.com/mattn/go-isatty"
 )
 
-var defaultRenderer terminal.Renderer = terminal.NewANSIRenderer()
+// ANSI SGR codes used for colorized output.
+const (
+	sgrReset   = "\033[0m"
+	sgrRed     = "\033[31m"
+	sgrGreen   = "\033[32m"
+	sgrYellow  = "\033[33m"
+	sgrBlue    = "\033[34m"
+	sgrMagenta = "\033[35m"
+	sgrCyan    = "\033[36m"
+	sgrDim     = "\033[2m"
+	sgrBold    = "\033[1m"
+)
 
 // ColorEnabled reports whether ANSI color output should be used.
 // Checks NO_COLOR and TERM=dumb environment variables on every call
 // so that tests can control color via env vars dynamically.
 func ColorEnabled() bool {
-	// NO_COLOR takes precedence over everything
+	// NO_COLOR must always take precedence.
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {
 		return false
 	}
-	// FORCE_COLOR enables colors unconditionally
 	if os.Getenv("FORCE_COLOR") != "" {
 		return true
 	}
-	// dumb terminal
 	if os.Getenv("TERM") == "dumb" {
 		return false
 	}
-	return defaultRenderer.IsTTY()
+	return isatty.IsTerminal(os.Stdout.Fd())
 }
 
 // colorMap maps color names to ANSI SGR codes.
@@ -48,61 +56,116 @@ func Colorize(text string, color string) string {
 	if !ColorEnabled() {
 		return text
 	}
-	code, ok := colorMap[strings.ToLower(color)]
-	if !ok {
+
+	var code string
+	switch color {
+	case "red":
+		code = sgrRed
+	case "green":
+		code = sgrGreen
+	case "yellow":
+		code = sgrYellow
+	case "blue":
+		code = sgrBlue
+	case "magenta":
+		code = sgrMagenta
+	case "cyan":
+		code = sgrCyan
+	case "dim":
+		code = sgrDim
+	case "bold":
+		code = sgrBold
+	default:
 		return text
 	}
+
 	return code + text + sgrReset
 }
 
 // ContractBoundary returns a visual separator for cross-contract call transitions.
 func ContractBoundary(fromContract, toContract string) string {
-	if ColorEnabled() {
-		return sgrMagenta + sgrBold + "--- contract boundary: " + fromContract + " -> " + toContract + " ---" + sgrReset
+	line := "--- contract boundary: " + fromContract + " -> " + toContract + " ---"
+	if !ColorEnabled() {
+		return line
 	}
-	return "--- contract boundary: " + fromContract + " -> " + toContract + " ---"
+	return sgrMagenta + sgrBold + line + sgrReset
 }
 
-// Success returns a success indicator: colored checkmark if enabled, "[OK]" otherwise.
+// Success returns a success indicator.
 func Success() string {
-	if ColorEnabled() {
-		return themeColors("success") + "[OK]" + sgrReset
+	if !ColorEnabled() {
+		return "[OK]"
 	}
-	return "[OK]"
+	return themeColors("success") + "[OK]" + sgrReset
 }
 
 // Warning returns a warning indicator.
 func Warning() string {
-	if ColorEnabled() {
-		return themeColors("warning") + "[!]" + sgrReset
+	if !ColorEnabled() {
+		return "[!]"
 	}
-	return "[!]"
+	return themeColors("warning") + "[!]" + sgrReset
 }
 
 // Error returns an error indicator.
 func Error() string {
-	if ColorEnabled() {
-		return themeColors("error") + "[X]" + sgrReset
+	if !ColorEnabled() {
+		return "[X]"
 	}
-	return "[X]"
+	return themeColors("error") + "[X]" + sgrReset
 }
 
-// Info returns an info indicator with theme-aware coloring.
+// Info returns an info indicator.
 func Info() string {
-	if ColorEnabled() {
-		return themeColors("info") + "[i]" + sgrReset
+	if !ColorEnabled() {
+		return "[i]"
 	}
-	return "[i]"
+	return themeColors("info") + "[i]" + sgrReset
 }
 
-// Symbol returns a symbol that may be styled; when colors disabled, returns plain ASCII equivalent.
+// Symbol returns a symbol name rendered as ASCII markers.
 //
 //nolint:gocyclo
 func Symbol(name string) string {
 	if ColorEnabled() {
-		return defaultRenderer.Symbol(name)
+		switch name {
+		case "check":
+			return "[OK]"
+		case "cross":
+			return "[FAIL]"
+		case "warn":
+			return "[!]"
+		case "arrow_r":
+			return "->"
+		case "arrow_l":
+			return "<-"
+		case "target":
+			return "[TARGET]"
+		case "pin":
+			return "*"
+		case "wrench":
+			return "[TOOL]"
+		case "chart":
+			return "[STATS]"
+		case "list":
+			return "[LIST]"
+		case "play":
+			return "[PLAY]"
+		case "book":
+			return "[DOC]"
+		case "wave":
+			return "[HELLO]"
+		case "magnify":
+			return "[SEARCH]"
+		case "logs":
+			return "[LOGS]"
+		case "events":
+			return "[NET]"
+		default:
+			return name
+		}
 	}
-	// Return plain ASCII equivalents (no ANSI, no Unicode symbols)
+
 	switch name {
 	case "check":
 		return "[OK]"

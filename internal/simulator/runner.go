@@ -10,8 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
 	"github.com/dotandev/hintents/internal/errors"
+	"github.com/dotandev/hintents/internal/ipc"
 	"github.com/dotandev/hintents/internal/logger"
 )
 
@@ -20,6 +22,7 @@ type Runner struct {
 	BinaryPath string
 	Debug      bool
 	MockTime   int64 // non-zero overrides Timestamp in every SimulationRequest
+	Validator  *Validator
 }
 
 // Compile-time check to ensure Runner implements RunnerInterface
@@ -49,6 +52,7 @@ func NewRunner(simPathOverride string, debug bool) (*Runner, error) {
 	return &Runner{
 		BinaryPath: path,
 		Debug:      debug,
+		Validator:  NewValidator(false),
 	}, nil
 }
 
@@ -62,7 +66,6 @@ func NewRunnerWithMockTime(simPathOverride string, debug bool, mockTime int64) (
 	r.MockTime = mockTime
 	return r, nil
 }
-
 
 // -------------------- Binary Discovery --------------------
 
@@ -138,9 +141,77 @@ func abs(path string) string {
 	return path
 }
 
+// getSandboxNativeTokenCap returns the effective sandbox native token cap (stroops):
+// request field if set, otherwise env ERST_SANDBOX_NATIVE_TOKEN_CAP_STROOPS.
+func getSandboxNativeTokenCap(req *SimulationRequest) *uint64 {
+	if req != nil && req.SandboxNativeTokenCapStroops != nil {
+		return req.SandboxNativeTokenCapStroops
+	}
+	if v := os.Getenv("ERST_SANDBOX_NATIVE_TOKEN_CAP_STROOPS"); v != "" {
+		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+			return &n
+		}
+	}
+	return nil
+}
+
+// getSimulatorMemoryLimit returns the effective simulator memory ceiling in bytes:
+// request field if set, otherwise env ERST_SIM_MEMORY_LIMIT_BYTES.
+func getSimulatorMemoryLimit(req *SimulationRequest) *uint64 {
+	if req != nil && req.MemoryLimit != nil {
+		return req.MemoryLimit
+	}
+	if v := os.Getenv("ERST_SIM_MEMORY_LIMIT_BYTES"); v != "" {
+		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+			return &n
+		}
+	}
+	return nil
+}
+
+func getSimulatorCoverageLCOVPath(req *SimulationRequest) *string {
+	if req != nil && req.CoverageLCOVPath != nil {
+		return req.CoverageLCOVPath
+	}
+	if v := os.Getenv("ERST_SIM_COVERAGE_LCOV_PATH"); v != "" {
+		return &v
+	}
+	return nil
+}
+
 // -------------------- Execution --------------------
 
 func (r *Runner) Run(req *SimulationRequest) (*SimulationResponse, error) {
+	if req == nil {
+		return nil, errors.NewSimErrorMsg(errors.CodeValidationFailed, "simulation request cannot be nil")
+	}
+
+	if req.MemoryLimit == nil {
+		req.MemoryLimit = getSimulatorMemoryLimit(req)
+	}
+	if req.CoverageLCOVPath == nil {
+		req.CoverageLCOVPath = getSimulatorCoverageLCOVPath(req)
+	}
+	if req.CoverageLCOVPath != nil {
+		req.EnableCoverage = true
+	}
+
+	// Enforce sandbox native token cap when set (local/sandbox economic constraint)
+	if capStroops := getSandboxNativeTokenCap(req); capStroops != nil {
+		if err := EnforceSandboxNativeTokenCap(req.EnvelopeXdr, *capStroops); err != nil {
+			logger.Logger.Error("Sandbox native token cap exceeded", "error", err)
+			return nil, err
+		}
+	}
+
+	// Validate request before processing
+	if r.Validator != nil {
+		if err := r.Validator.ValidateRequest(req); err != nil {
+			logger.Logger.Error("Request validation failed", "error", err)
+			return nil, err
+		}
+	}
+
 	proto := GetOrDefault(req.ProtocolVersion)
 
 	if req.ProtocolVersion != nil {
@@ -179,6 +250,17 @@ func (r *Runner) Run(req *SimulationRequest) (*SimulationResponse, error) {
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
 		logger.Logger.Error("Failed to unmarshal response", "error", err)
 		return nil, errors.WrapUnmarshalFailed(err, stdout.String())
+	}
+
+	// If the simulator returned a logical error inside the response payload,
+	// classify it into a unified ErstError before returning to the caller.
+	if resp.Error != "" {
+		classified := (&ipc.Error{Code: resp.ErrorCode, Message: resp.Error}).ToErstError()
+		logger.Logger.Error("Simulator returned error",
+			"code", classified.Code,
+			"original", classified.OriginalError,
+		)
+		return nil, classified
 	}
 
 	resp.ProtocolVersion = &proto.Version

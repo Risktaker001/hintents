@@ -27,8 +27,9 @@ var (
 )
 
 var daemonCmd = &cobra.Command{
-	Use:   "daemon",
-	Short: "Start JSON-RPC server for remote debugging",
+	Use:     "daemon",
+	GroupID: "development",
+	Short:   "Start JSON-RPC server for remote debugging",
 	Long: `Start a JSON-RPC 2.0 server that exposes ERST functionality for remote tools and IDEs.
 
 Endpoints:

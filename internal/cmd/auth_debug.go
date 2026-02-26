@@ -21,8 +21,9 @@ var (
 )
 
 var authDebugCmd = &cobra.Command{
-	Use:   "auth-debug <transaction-hash>",
-	Short: "Debug multi-signature and threshold-based authorization failures",
+	Use:     "auth-debug <transaction-hash>",
+	GroupID: "core",
+	Short:   "Debug multi-signature and threshold-based authorization failures",
 	Long: `Analyze multi-signature authorization flows and identify which signatures or thresholds failed.
 
 Examples:

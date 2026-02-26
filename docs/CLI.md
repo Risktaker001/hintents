@@ -22,6 +22,49 @@ erst [command]
 
 ---
 
+## erst generate-bindings
+
+Generate TypeScript bindings for a Soroban smart contract. Creates strongly-typed client libraries with erst integration.
+
+### Usage
+
+```bash
+erst generate-bindings <wasm-file> [flags]
+```
+
+### Examples
+
+```bash
+# Basic usage
+erst generate-bindings contract.wasm
+
+# With custom output and package name
+erst generate-bindings contract.wasm --output ./src/bindings --package my-contract
+
+# With contract ID and network
+erst generate-bindings contract.wasm \
+  --contract-id CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGCN4B2 \
+  --network testnet
+```
+
+### Options
+
+```
+  -h, --help                help for generate-bindings
+  -o, --output string       Output directory (defaults to current directory)
+  -p, --package string      Package name (defaults to WASM filename)
+      --contract-id string  Contract ID for network calls
+  -n, --network string      Stellar network (testnet, mainnet, futurenet) (default "testnet")
+```
+
+### Arguments
+
+| Argument | Description |
+| :--- | :--- |
+| `<wasm-file>` | Path to the compiled Soroban contract WASM file |
+
+---
+
 ## erst debug
 
 Debug a failed Soroban transaction. Fetches a transaction envelope from the Stellar network and prepares it for simulation.
