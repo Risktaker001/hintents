@@ -1,3 +1,6 @@
+// Copyright (c) Hintents Authors.
+// SPDX-License-Identifier: Apache-2.0
+
 // src/types/sdk.ts
 // Copyright (c) Hintents Authors.
 // SPDX-License-Identifier: Apache-2.0

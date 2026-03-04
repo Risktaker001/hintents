@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package trace
@@ -37,10 +37,10 @@ func NewDepthAnalyzer(maxDisplayDepth int) *DepthAnalyzer {
 // AnalyzeDepth analyzes the trace tree and identifies deeply nested calls
 func (da *DepthAnalyzer) AnalyzeDepth(root *TraceNode) *DepthAnalysis {
 	analysis := &DepthAnalysis{
-		MaxDepth:         0,
-		TotalNodes:       0,
-		ErrorNodes:       make([]*TraceNode, 0),
-		DeepNodes:        make([]*TraceNode, 0),
+		MaxDepth:           0,
+		TotalNodes:         0,
+		ErrorNodes:         make([]*TraceNode, 0),
+		DeepNodes:          make([]*TraceNode, 0),
 		CrossContractCalls: make([]*TraceNode, 0),
 	}
 

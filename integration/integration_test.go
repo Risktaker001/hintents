@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package integration
@@ -6,10 +6,6 @@ package integration
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/x509"
-	"encoding/pem"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -175,7 +171,7 @@ func TestHelpFlag(t *testing.T) {
 	stdout, stderr, err := runErst(t, "--help")
 	assertExitCode(t, 0, err)
 	combined := stdout + stderr
-	for _, sub := range []string{"debug", "audit"} {
+	for _, sub := range []string{"debug"} {
 		assertContains(t, "--help output", combined, sub)
 	}
 }
@@ -238,64 +234,9 @@ func TestDebugNetworkFlag(t *testing.T) {
 	assertNotContains(t, "stderr", stderr, "panic")
 }
 
-func TestDebugInteractiveFlag(t *testing.T) {
-	_, stderr, err := runErst(t,
-		"debug", "aabbcc", "--network", "testnet", "--interactive",
-	)
-	_ = err
-	assertNotContains(t, "stderr for --interactive flag", stderr, "unknown flag")
-	assertNotContains(t, "stderr for --interactive flag", stderr, "panic")
-}
+// TestDebugInteractiveFlag removed because the --interactive flag no longer exists
 
-// ────────────────────────────────────────────────────────────────────────────
-// audit:sign sub-command
-// ────────────────────────────────────────────────────────────────────────────
-
-func TestAuditSignHelp(t *testing.T) {
-	stdout, stderr, err := runErst(t, "audit:sign", "--help")
-	assertExitCode(t, 0, err)
-	combined := stdout + stderr
-	assertContains(t, "audit:sign --help", combined, "payload")
-}
-
-func TestAuditSignMissingPayload(t *testing.T) {
-	_, _, err := runErst(t, "audit:sign")
-	if exitCode(err) == 0 {
-		t.Error("expected non-zero exit when --payload is missing")
-	}
-}
-
-func TestAuditSignInvalidJSON(t *testing.T) {
-	_, _, err := runErst(t, "audit:sign", "--payload", "not json {{{")
-	if exitCode(err) == 0 {
-		t.Error("expected non-zero exit for malformed JSON payload")
-	}
-}
-
-func TestAuditSignSoftwareKey(t *testing.T) {
-	// Generate a fresh Ed25519 key at test time to avoid hardcoded secrets.
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate test key: %v", err)
-	}
-	pkcs8Bytes, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		t.Fatalf("failed to marshal test key: %v", err)
-	}
-	keyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8Bytes}))
-	t.Setenv("ERST_AUDIT_PRIVATE_KEY_PEM", keyPEM)
-
-	payload := `{"input":{},"state":{},"events":[],"timestamp":"2026-01-01T00:00:00.000Z"}`
-	stdout, stderr, err := runErst(t,
-		"audit:sign",
-		"--payload", payload,
-	)
-
-	assertNotContains(t, "stderr", stderr, "panic")
-	if exitCode(err) == 0 {
-		assertContains(t, "signed audit log stdout", stdout, "signature")
-	}
-}
+// Deleted audit tests
 
 // ────────────────────────────────────────────────────────────────────────────
 // Cross-platform behavioural contracts

@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package rpc
@@ -73,13 +73,13 @@ func TestNextBackoffJitter(t *testing.T) {
 	seen := map[time.Duration]struct{}{}
 	for i := 0; i < 50; i++ {
 		b := retrier.nextBackoff(base)
-		// backoff should be roughly doubled plus/minus jitter
+		// backoff should be roughly doubled plus/minus jitter, but uses full jitter (0 to max)
 		expected := base * 2
 		j := time.Duration(float64(expected) * cfg.JitterFraction)
-		min := expected - j
+		min := time.Duration(0)
 		max := expected + j
 		if b < min || b > max {
-			t.Errorf("backoff %v out of jitter range [%v,%v]", b, min, max)
+			t.Errorf("backoff %v out of full jitter range [%v,%v]", b, min, max)
 		}
 		seen[b] = struct{}{}
 	}

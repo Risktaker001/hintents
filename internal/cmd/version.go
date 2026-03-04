@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package cmd
@@ -14,7 +14,7 @@ import (
 
 var (
 	// Build information populated by ldflags
-	Version   = "dev"
+	Version   = "0.0.0-dev"
 	CommitSHA = "unknown"
 	BuildDate = "unknown"
 )

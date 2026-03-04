@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 //! Extracts contract-emitted debug strings from Soroban diagnostic events.
@@ -9,7 +9,7 @@
 //! into plain strings so the simulator can surface them in `SimulationResponse.logs`.
 
 use soroban_env_host::events::Events;
-use soroban_env_host::xdr::{ContractEventBody, ContractEventType, ScVal, ScString};
+use soroban_env_host::xdr::{ContractEventBody, ContractEventType, ScString, ScVal};
 
 /// Extracts debug log strings emitted by contracts via `log_from_linear_memory`.
 ///
@@ -25,9 +25,10 @@ pub fn extract_debug_logs(events: &Events) -> Vec<String> {
 
         let ContractEventBody::V0(v0) = &entry.event.body;
 
-        let is_log = v0.topics.first().map_or(false, |t| {
-            matches!(t, ScVal::Symbol(s) if s.as_slice() == b"log")
-        });
+        let is_log = v0.topics.first().map_or(
+            false,
+            |t| matches!(t, ScVal::Symbol(s) if s.as_slice() == b"log"),
+        );
 
         if !is_log {
             continue;
@@ -77,8 +78,8 @@ mod tests {
     use super::*;
     use soroban_env_host::events::{Events, HostEvent};
     use soroban_env_host::xdr::{
-        ContractEvent, ContractEventBody, ContractEventType, ContractEventV0,
-        ScString, ScSymbol, ScVal, ScVec, VecM,
+        ContractEvent, ContractEventBody, ContractEventType, ContractEventV0, ScString, ScSymbol,
+        ScVal, ScVec, VecM,
     };
 
     fn make_log_event(data: ScVal) -> HostEvent {

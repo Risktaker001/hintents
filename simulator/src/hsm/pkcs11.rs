@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 //! PKCS#11 HSM signer implementation for hardware-backed cryptographic operations.

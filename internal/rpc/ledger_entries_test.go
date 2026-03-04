@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package rpc
@@ -21,15 +21,14 @@ import (
 // Each call with a different index produces a unique key.
 func makeTestLedgerKey(t *testing.T, index int) string {
 	t.Helper()
-	// Build a unique 32-byte account ID from the index
-	var raw [32]byte
-	// Spread index bytes across the array for uniqueness
-	raw[0] = byte(index >> 24)
-	raw[1] = byte(index >> 16)
-	raw[2] = byte(index >> 8)
-	raw[3] = byte(index)
-	accountID, err := xdr.NewAccountId(xdr.PublicKeyTypePublicKeyTypeEd25519, xdr.Uint256(raw))
-	require.NoError(t, err)
+	var raw xdr.Uint256
+	raw[31] = byte(index)
+
+	accountID := xdr.AccountId{
+		Type:    xdr.PublicKeyTypePublicKeyTypeEd25519,
+		Ed25519: &raw,
+	}
+
 	key := xdr.LedgerKey{
 		Type: xdr.LedgerEntryTypeAccount,
 		Account: &xdr.LedgerKeyAccount{
@@ -50,7 +49,6 @@ func makeTestLedgerKeys(t *testing.T, n int) []string {
 	}
 	return keys
 }
-
 
 // TestGetLedgerEntries_EmptyKeys tests that empty key list returns empty map
 func TestGetLedgerEntries_EmptyKeys(t *testing.T) {
@@ -86,11 +84,7 @@ func TestGetLedgerEntries_FiveKeys(t *testing.T) {
 		reqKeys := req.Params[0].([]interface{})
 
 		// Build response with entries for each key
-<<<<<<< Updated upstream
 		entries := make([]LedgerEntryResult, len(reqKeys))
-=======
-		entries := make([]LedgerEntryResult, len(keys))
->>>>>>> Stashed changes
 
 		for i, key := range reqKeys {
 			entries[i] = LedgerEntryResult{

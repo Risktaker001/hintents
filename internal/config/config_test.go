@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -46,22 +46,22 @@ func TestConfigValidation(t *testing.T) {
 	}{
 		{
 			"valid public network",
-			&Config{RpcUrl: "https://test.com", Network: NetworkPublic},
+			&Config{RpcUrl: "https://test.com", Network: NetworkPublic, RequestTimeout: 30},
 			false,
 		},
 		{
 			"valid testnet",
-			&Config{RpcUrl: "https://test.com", Network: NetworkTestnet},
+			&Config{RpcUrl: "https://test.com", Network: NetworkTestnet, RequestTimeout: 30},
 			false,
 		},
 		{
 			"valid futurenet",
-			&Config{RpcUrl: "https://test.com", Network: NetworkFuturenet},
+			&Config{RpcUrl: "https://test.com", Network: NetworkFuturenet, RequestTimeout: 30},
 			false,
 		},
 		{
 			"valid standalone",
-			&Config{RpcUrl: "https://test.com", Network: NetworkStandalone},
+			&Config{RpcUrl: "https://test.com", Network: NetworkStandalone, RequestTimeout: 30},
 			false,
 		},
 		{
@@ -509,9 +509,12 @@ func TestLoad_RequestTimeoutInvalidEnvIgnored(t *testing.T) {
 
 	os.Setenv("ERST_REQUEST_TIMEOUT", "notanumber")
 
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid ERST_REQUEST_TIMEOUT value")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.RequestTimeout != 15 {
+		t.Errorf("expected RequestTimeout to fall back to default 15, got %d", cfg.RequestTimeout)
 	}
 }
 

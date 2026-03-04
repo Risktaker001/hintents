@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package tests
@@ -31,10 +31,21 @@ func buildErstBinary(t *testing.T, repoRoot string) string {
 
 	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/erst")
 	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("failed to build erst binary: %v\nstderr:\n%s", err, stderr.String())
+
+		debugCmd := exec.Command("go", "env")
+		debugCmd.Dir = repoRoot
+		debugOut, _ := debugCmd.CombinedOutput()
+
+		lsCmd := exec.Command("ls", "-la", "internal/cmd")
+		lsCmd.Dir = repoRoot
+		lsOut, _ := lsCmd.CombinedOutput()
+
+		t.Fatalf("failed to build erst binary: %v\nstderr:\n%s\ngo env:\n%s\nls internal/cmd:\n%s", err, stderr.String(), string(debugOut), string(lsOut))
 	}
 	return binPath
 }

@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -19,7 +19,7 @@ import (
 // deterministic hashing across different platforms and scenarios.
 
 func main() {
-	fmt.Println("=== Canonical JSON Serialization Demo ===\n")
+	fmt.Println("=== Canonical JSON Serialization Demo ===")
 
 	// Generate a key pair for signing
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
@@ -54,7 +54,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("   ✓ Signature verified successfully")
+	fmt.Println("   [OK] Signature verified successfully")
 	fmt.Println()
 
 	// Example 3: Demonstrate deterministic hashing
@@ -87,10 +87,10 @@ func main() {
 	}
 
 	if allSame {
-		fmt.Println("   ✓ All 5 hashes are identical (deterministic)")
+		fmt.Println("   [OK] All 5 hashes are identical (deterministic)")
 		fmt.Printf("   Hash: %s\n", hashes[0])
 	} else {
-		fmt.Println("   ✗ Hashes differ (non-deterministic)")
+		fmt.Println("   [FAIL] Hashes differ (non-deterministic)")
 	}
 	fmt.Println()
 
@@ -125,9 +125,9 @@ func main() {
 
 	err = cmd.Verify(&tamperedLog)
 	if err != nil {
-		fmt.Printf("   ✓ Tampering detected: %v\n", err)
+		fmt.Printf("   [OK] Tampering detected: %v\n", err)
 	} else {
-		fmt.Println("   ✗ Tampering not detected (unexpected)")
+		fmt.Println("   [FAIL] Tampering not detected (unexpected)")
 	}
 	fmt.Println()
 
@@ -151,7 +151,7 @@ func main() {
 	log2, _ := cmd.Generate("tx1", "envelope", "result", []string{"e1"}, []string{"l1"}, privateKeyHex, nil)
 
 	if log1.TraceHash == log2.TraceHash {
-		fmt.Println("   ✓ Same data produces same hash regardless of field order")
+		fmt.Println("   [OK] Same data produces same hash regardless of field order")
 		fmt.Printf("   Hash: %s\n", log1.TraceHash)
 	}
 	fmt.Println()

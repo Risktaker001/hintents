@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Erst Users
+# Copyright 2026 Erst Users
 # SPDX-License-Identifier: Apache-2.0
 #
 # Add "good first issue" label to issues listed in docs/community/LABELS_AUDIT.md.

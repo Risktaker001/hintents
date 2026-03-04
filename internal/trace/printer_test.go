@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package trace_test
@@ -36,7 +36,7 @@ func TestPrintTraceTree_NoColor(t *testing.T) {
 		{"tree connector", "├─"},
 		{"leaf connector", "└─"},
 		{"contract func transfer", "transfer"},
-		{"error icon", "✗"},
+		{"error icon", "[FAIL]"},
 		{"error text", "Insufficient balance"},
 		{"cpu budget", "CPU:"},
 		{"mem budget", "MEM:"},
@@ -93,7 +93,7 @@ func TestPrintExecutionTrace_NoColor(t *testing.T) {
 		"CONTRACT_CALL",
 		"transfer",
 		"fail_fn",
-		"✗",
+		"[FAIL]",
 		"out of gas",
 		"Steps: 3",
 		"Errors: 1",

@@ -86,21 +86,21 @@ jobs:
               "template": "# {{TAG}}\n\n{{CATEGORIES}}",
               "categories": [
                 {
-                  "title": "## 🚀 Features",
+                  "title": "## [DEPLOY] Features",
                   "filter": {
                     "pattern": "feat.*",
                     "target": "commit"
                   }
                 },
                 {
-                  "title": "## 🐛 Fixes",
+                  "title": "## [BUG] Fixes",
                   "filter": {
                     "pattern": "fix.*",
                     "target": "commit"
                   }
                 },
                 {
-                  "title": "## 🛠️ Chores",
+                  "title": "## [FIX] Chores",
                   "filter": {
                     "pattern": "chore.*",
                     "target": "commit"

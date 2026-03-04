@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package cmd
@@ -1215,15 +1215,38 @@ func displaySourceLocation(loc *simulator.SourceLocation) {
 }
 
 func applySimulationFeeMocks(req *simulator.SimulationRequest) {
-	// Stub implementation
+	if mockBaseFeeFlag > 0 {
+		baseFee := mockBaseFeeFlag
+		req.MockBaseFee = &baseFee
+	}
+	if mockGasPriceFlag > 0 {
+		gas := mockGasPriceFlag
+		req.MockGasPrice = &gas
+	}
+}
+
+var deprecatedHostFuncs = []string{
+	"vec_unpack_to_linear_memory",
+	"bytes_copy_to_linear_memory",
 }
 
 func findDeprecatedHostFunction(event string) (string, bool) {
-	// Stub implementation
+	for _, fn := range deprecatedHostFuncs {
+		if strings.Contains(event, "Symbol(\""+fn+"\")") {
+			return fn, true
+		}
+	}
 	return "", false
 }
 
 func deprecatedHostFunctionInDiagnosticEvent(event simulator.DiagnosticEvent) (string, bool) {
-	// Stub implementation
+	if name, ok := findDeprecatedHostFunction(event.Data); ok {
+		return name, ok
+	}
+	for _, topic := range event.Topics {
+		if name, ok := findDeprecatedHostFunction(topic); ok {
+			return name, ok
+		}
+	}
 	return "", false
 }

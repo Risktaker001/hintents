@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package cmd
@@ -109,8 +109,14 @@ func TestCheckSimulatorPaths(t *testing.T) {
 
 func TestGoVersionMismatch(t *testing.T) {
 	// write a temporary go.mod with incompatible version
-	orig, _ := os.ReadFile("go.mod")
-	defer os.WriteFile("go.mod", orig, 0644)
+	orig, err := os.ReadFile("go.mod")
+	defer func() {
+		if err != nil {
+			os.Remove("go.mod")
+		} else {
+			os.WriteFile("go.mod", orig, 0644)
+		}
+	}()
 	_ = os.WriteFile("go.mod", []byte("module foo\n\ngo 9.99\n"), 0644)
 	dep := checkGo(false)
 	if dep.FixHint == "" {

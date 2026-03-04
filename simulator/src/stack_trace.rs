@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 //! Enhanced WASM stack trace generation.
@@ -133,6 +133,11 @@ impl WasmStackTrace {
             TrapKind::HostError(_) => "host error",
             TrapKind::Unknown(_) => "unknown trap",
         }
+    }
+
+    /// Get the WASM offset of the most recent frame (the trap site), if known.
+    pub fn offset(&self) -> Option<u64> {
+        self.frames.first().and_then(|f| f.wasm_offset)
     }
 }
 

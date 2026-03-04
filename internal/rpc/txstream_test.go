@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package rpc
@@ -554,9 +554,8 @@ func TestProbeWebSocket_ReturnsFalseForHTTPOnlyServer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	wsURL := "ws://" + srv.Listener.Addr().String()[len("http://"):]
 	// Strip the http:// prefix if present — Listener.Addr() returns host:port.
-	wsURL = "ws://" + strings.TrimPrefix(srv.URL, "http://")
+	wsURL := "ws://" + strings.TrimPrefix(srv.URL, "http://")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

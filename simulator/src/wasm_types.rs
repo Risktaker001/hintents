@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 //! WebAssembly type parsing and signature analysis for enhanced trap diagnostics.

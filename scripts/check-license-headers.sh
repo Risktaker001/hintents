@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Erst Users
+# Copyright 2026 Erst Users
 # SPDX-License-Identifier: Apache-2.0
 
 # Check for license headers in Go and Rust files
@@ -7,7 +7,7 @@
 set -e
 
 MISSING_HEADERS=0
-EXPECTED_HEADER="Copyright 2025 Erst Users"
+EXPECTED_HEADER="Copyright 2026 Erst Users"
 
 echo "Checking for license headers in Go and Rust files..."
 

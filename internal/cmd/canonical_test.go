@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package cmd
@@ -20,10 +20,10 @@ func TestCanonicalJSON_KeyOrdering(t *testing.T) {
 		{
 			name: "keys sorted alphabetically",
 			input: map[string]interface{}{
-				"zebra":   "last",
-				"apple":   "first",
-				"middle":  "middle",
-				"banana":  "second",
+				"zebra":  "last",
+				"apple":  "first",
+				"middle": "middle",
+				"banana": "second",
 			},
 			expected: `{"apple":"first","banana":"second","middle":"middle","zebra":"last"}`,
 		},
@@ -39,8 +39,8 @@ func TestCanonicalJSON_KeyOrdering(t *testing.T) {
 			expected: `{"outer_a":"simple","outer_z":{"inner_a":"value2","inner_z":"value1"}}`,
 		},
 		{
-			name: "empty object",
-			input: map[string]interface{}{},
+			name:     "empty object",
+			input:    map[string]interface{}{},
 			expected: `{}`,
 		},
 	}
@@ -66,8 +66,8 @@ func TestCanonicalJSON_Arrays(t *testing.T) {
 			expected: `["a","b","c"]`,
 		},
 		{
-			name:     "array with objects",
-			input:    []interface{}{
+			name: "array with objects",
+			input: []interface{}{
 				map[string]interface{}{"z": 1, "a": 2},
 				map[string]interface{}{"b": 3},
 			},

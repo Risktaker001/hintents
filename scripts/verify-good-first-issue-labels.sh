@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Erst Users
+# Copyright 2026 Erst Users
 # SPDX-License-Identifier: Apache-2.0
 #
 # Verify at least 10 open issues have the "good first issue" label (read-only, no token).

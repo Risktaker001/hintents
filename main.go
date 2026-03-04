@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	// "github.com/dotandev/hintents/internal/cmd"
 	"github.com/dotandev/hintents/internal/cmd"
 	"github.com/dotandev/hintents/internal/config"
 	"github.com/dotandev/hintents/internal/crashreport"

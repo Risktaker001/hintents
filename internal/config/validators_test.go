@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -208,12 +208,12 @@ func TestMergeDefaults_PreservesExistingValues(t *testing.T) {
 // --- Validate integration (delegates to validators) ---
 
 func TestValidate_Delegates(t *testing.T) {
-	cfg := &Config{RpcUrl: "https://test.com", Network: NetworkTestnet, LogLevel: "info"}
+	cfg := &Config{RpcUrl: "https://test.com", Network: NetworkTestnet, LogLevel: "info", RequestTimeout: 15}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("valid config should pass Validate: %v", err)
 	}
 
-	cfg2 := &Config{RpcUrl: "", Network: NetworkTestnet}
+	cfg2 := &Config{RpcUrl: "", Network: NetworkTestnet, RequestTimeout: 15}
 	if err := cfg2.Validate(); err == nil {
 		t.Error("expected Validate to reject empty rpc_url")
 	}

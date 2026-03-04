@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package trace
@@ -207,7 +207,7 @@ func PrintExecutionTrace(t *ExecutionTrace, opts PrintOptions) {
 				if j == 0 {
 					fmt.Fprintf(out, "%s  %s %s\n",
 						continuation,
-						p.errorFn.Sprint("✗"),
+						p.errorFn.Sprint("[FAIL]"),
 						p.errorMsg.Sprint(line),
 					)
 				} else {
@@ -334,7 +334,7 @@ func printTreeNode(out io.Writer, p palette, node *TraceNode, prefix string, isL
 			if j == 0 {
 				fmt.Fprintf(out, "%s  %s %s\n",
 					childPrefix,
-					p.errorFn.Sprint("✗"),
+					p.errorFn.Sprint("[FAIL]"),
 					p.errorMsg.Sprint(line),
 				)
 			} else {
@@ -444,11 +444,11 @@ func iconForType(t string) string {
 	case "event":
 		return "◉"
 	case "error":
-		return "✗"
+		return "[FAIL]"
 	case "log":
 		return "▪"
 	case EventTypeTrap:
-		return "⚡"
+		return "[READY]"
 	case "transaction", "simulation":
 		return "▸"
 	case "transaction_complete":

@@ -1,23 +1,23 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package simulator
 
 type SimulationRequest struct {
-	EnvelopeXdr     string            `json:"envelope_xdr"`
-	ResultMetaXdr   string            `json:"result_meta_xdr"`
-	LedgerEntries   map[string]string `json:"ledger_entries,omitempty"`
-	Timestamp       int64             `json:"timestamp,omitempty"`
-	LedgerSequence  uint32            `json:"ledger_sequence,omitempty"`
-	WasmPath        *string           `json:"wasm_path,omitempty"`
-	MockArgs        *[]string         `json:"mock_args,omitempty"`
-	Profile         bool              `json:"profile,omitempty"`
-	ProtocolVersion *uint32           `json:"protocol_version,omitempty"`
-	MockBaseFee     *uint32           `json:"mock_base_fee,omitempty"`
-	MockGasPrice    *uint64           `json:"mock_gas_price,omitempty"`
-	MemoryLimit     *uint64           `json:"memory_limit,omitempty"`
-	EnableCoverage  bool              `json:"enable_coverage,omitempty"`
-	CoverageLCOVPath *string          `json:"coverage_lcov_path,omitempty"`
+	EnvelopeXdr      string            `json:"envelope_xdr"`
+	ResultMetaXdr    string            `json:"result_meta_xdr"`
+	LedgerEntries    map[string]string `json:"ledger_entries,omitempty"`
+	Timestamp        int64             `json:"timestamp,omitempty"`
+	LedgerSequence   uint32            `json:"ledger_sequence,omitempty"`
+	WasmPath         *string           `json:"wasm_path,omitempty"`
+	MockArgs         *[]string         `json:"mock_args,omitempty"`
+	Profile          bool              `json:"profile,omitempty"`
+	ProtocolVersion  *uint32           `json:"protocol_version,omitempty"`
+	MockBaseFee      *uint32           `json:"mock_base_fee,omitempty"`
+	MockGasPrice     *uint64           `json:"mock_gas_price,omitempty"`
+	MemoryLimit      *uint64           `json:"memory_limit,omitempty"`
+	EnableCoverage   bool              `json:"enable_coverage,omitempty"`
+	CoverageLCOVPath *string           `json:"coverage_lcov_path,omitempty"`
 
 	RestorePreamble map[string]interface{} `json:"restore_preamble,omitempty"`
 

@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package cmd
@@ -62,6 +62,7 @@ Get started with 'erst debug --help' or visit the documentation.`,
 	},
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	Version:       Version,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

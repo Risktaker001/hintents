@@ -1,4 +1,4 @@
-// Copyright 2025 Erst Users
+// Copyright 2026 Erst Users
 // SPDX-License-Identifier: Apache-2.0
 
 package trace
@@ -10,7 +10,7 @@ import (
 func BenchmarkAnalyzeDepth(b *testing.B) {
 	root := createDeepTrace(100)
 	da := NewDepthAnalyzer(10)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		da.AnalyzeDepth(root)
@@ -20,7 +20,7 @@ func BenchmarkAnalyzeDepth(b *testing.B) {
 func BenchmarkOptimizeForDisplay(b *testing.B) {
 	root := createDeepTrace(100)
 	da := NewDepthAnalyzer(10)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		da.OptimizeForDisplay(root)
@@ -29,7 +29,7 @@ func BenchmarkOptimizeForDisplay(b *testing.B) {
 
 func BenchmarkFocusOnErrors(b *testing.B) {
 	root := createDeepTrace(100)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		FocusOnErrors(root)
@@ -39,7 +39,7 @@ func BenchmarkFocusOnErrors(b *testing.B) {
 func createDeepTrace(depth int) *TraceNode {
 	root := NewTraceNode("root", "transaction")
 	current := root
-	
+
 	for i := 0; i < depth; i++ {
 		child := NewTraceNode("node-"+string(rune(i)), "contract_call")
 		child.ContractID = "CONTRACT"
@@ -51,10 +51,10 @@ func createDeepTrace(depth int) *TraceNode {
 		current.AddChild(child)
 		current = child
 	}
-	
+
 	errorNode := NewTraceNode("error", "error")
 	errorNode.Error = "Deep error"
 	current.AddChild(errorNode)
-	
+
 	return root
 }
