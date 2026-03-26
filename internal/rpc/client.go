@@ -1063,7 +1063,7 @@ func (c *Client) getLedgerEntriesAttempt(ctx context.Context, keysToFetch []stri
 	if rpcResp.Error != nil {
 		// Record failed remote node response
 		metrics.RecordRemoteNodeResponse(targetURL, string(c.Network), false, duration)
-		return nil, errors.WrapRPCError(targetURL, rpcResp.Error.Message, rpcResp.Error.Code)
+		return nil, errors.WrapSorobanError(targetURL, rpcResp.Error.Message, rpcResp.Error.Code)
 	}
 
 	// Record successful remote node response
@@ -1376,7 +1376,7 @@ func (c *Client) simulateTransactionAttempt(ctx context.Context, envelopeXdr str
 	}
 
 	if rpcResp.Error != nil {
-		return nil, errors.WrapRPCError(targetURL, rpcResp.Error.Message, rpcResp.Error.Code)
+		return nil, errors.WrapSorobanError(targetURL, rpcResp.Error.Message, rpcResp.Error.Code)
 	}
 
 	return &rpcResp, nil
