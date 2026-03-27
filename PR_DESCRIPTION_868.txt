@@ -1,0 +1,101 @@
+# PR: Replace brittle stack trace parsing with structured Wasmi Frame extraction (#868)
+
+## Summary
+
+Refactored `stack_trace.rs` to use regex-based pattern matching instead of brittle string parsing, improving robustness and maintainability of frame extraction from Wasmi/Soroban error strings.
+
+## Problem
+
+The original implementation used string-based parsing with operations like:
+- `line.split_whitespace()` and `to_lowercase()`
+- These break easily if upstream error formats change
+- No support for varied frame formats from different Wasmi versions
+
+## Solution
+
+### Regex-Based Frame Extraction
+
+Pre-compiled regex patterns using `once_cell::sync::Lazy`:
+
+```rust
+// Matches: `0: func[42] @ 0xa3c`, `#0: func[42] @ 0xa3c`, etc.
+static NUMBERED_FRAME: Lazy<Regex> = lazy_regex!(...);
+
+// Matches: `func[42] @ 0xa3c` (without index prefix)
+static BARE_FRAME: Lazy<Regex> = lazy_regex!(...);
+
+// Matches: `wasm backtrace:`, `Trace:`, etc.
+static BACKTRACE_HEADER: Lazy<Regex> = lazy_regex!(...);
+```
+
+### Trap Classification
+
+Case-insensitive regex patterns for all trap types:
+- OOB memory, OOB table, overflow, div/0, unreachable
+- Stack overflow, indirect call mismatch, undefined element
+- Host error (general case)
+
+### Regex-Based Error Type Detection
+
+```rust
+static trap_patterns: Lazy<TrapPatterns> = lazy_regex!{
+    r"(?i)out of bounds|index out of bounds" => TrapType::OutOfBounds,
+    r"(?i)overflow" => TrapType::Overflow,
+    // ...
+};
+```
+
+## Files Changed
+
+- `simulator/Cargo.toml` (+3 dependencies)
+  - `once_cell = "1.19"` - Lazy static regex compilation
+  - `regex = "1.11"` - Robust pattern matching
+  - `proptest = "1.5"` - Property-based testing
+
+- `simulator/src/stack_trace.rs` (complete refactor)
+  - Regex-based frame extraction (~170 lines)
+  - Trap classification patterns (~20 trap types)
+  - Unit tests for edge cases
+  - Property-based tests for robustness
+
+## Testing
+
+### Property-Based Tests
+- `prop_extract_preserves_frame_indices` - Index preservation verification
+- `prop_offset_parsing` - Hex and decimal offset parsing
+- `prop_function_name_parsing` - Various function name formats
+- `prop_trap_classification_is_deterministic` - Classification consistency
+- `prop_mixed_frame_formats` - Mixed format backtraces
+
+### Unit Tests
+- Hash prefix frames (`#0: func[42]`)
+- Module path parsing (`<my_contract>::transfer`)
+- Mixed format backtraces
+- Complex module paths
+- Case variations
+- Edge cases (empty input, whitespace, Unicode)
+
+## Run Tests
+
+```bash
+cd simulator
+cargo test stack_trace
+# or use Makefile
+make rust-test
+```
+
+## Benefits
+
+1. **Robust parsing** - Regex patterns handle various error string formats consistently
+2. **Pre-compiled patterns** - `once_cell::Lazy` for efficient pattern reuse
+3. **Property-based coverage** - Proptest generates wide variety of inputs
+4. **Case-insensitive matching** - Handles mixed-case from upstream
+5. **Maintainable** - Easy to add new patterns or modify existing ones
+
+## Breaking Changes
+
+None. The public API remains unchanged.
+
+## Backwards Compatibility
+
+All existing frame formats are supported. New patterns can be added without breaking existing functionality.

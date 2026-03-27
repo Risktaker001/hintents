@@ -1,0 +1,85 @@
+# PR: Windows-Native File Locking for SourceMapCache (#870)
+
+## Summary
+
+Implements Windows-native file locking for the SourceMapCache using `LockFileEx` API, replacing the previous no-op implementation that left Windows users vulnerable to cache corruption during concurrent debug sessions.
+
+## Problem
+
+The existing `flock`-based file locking was a no-op on Windows:
+- `syscall.Flock` is not supported on Windows platforms
+- Concurrent writes from multiple processes could corrupt cache files
+- Debug sessions with parallel test runs were particularly affected
+
+## Solution
+
+Implemented proper Windows file locking using `LockFileEx` from `golang.org/x/sys/windows`:
+
+### LockFileEx Implementation
+```go
+// Exclusive locks for write operations
+// Shared locks for read operations
+// Retry logic with exponential backoff (up to 10 attempts)
+// Non-inheritable handles (Windows security best practice)
+```
+
+### Key Features
+- **Exclusive locks** (`LOCKFILE_EXCLUSIVE_LOCK`) for write operations
+- **Shared locks** for concurrent read operations
+- **Exponential backoff retry** (1ms → 2ms → 4ms → ... → 100ms max)
+- **Timeout handling** after 10 failed attempts
+- **Non-inheritable handles** to prevent child process lock issues
+
+## Files Changed
+
+- `internal/sourcemap/cache_lock_windows.go` (66 lines)
+  - `acquireLock()` - Opens lock file and acquires LockFileEx
+  - `releaseLock()` - Unlocks file and closes handle
+  - Retry logic with exponential backoff
+  - Error handling for lock violations
+
+- `internal/sourcemap/sourcemap_test.go` (+120 lines)
+  - `TestSourceCache_ConcurrentWrites` - 10 writers × 5 writes to same entry
+  - `TestSourceCache_ConcurrentWritesDifferentEntries` - 20 concurrent writers
+
+## Testing
+
+The existing CI workflow already includes Windows testing:
+```yaml
+matrix:
+  os: [ubuntu-latest, macos-latest, windows-latest]
+```
+
+Run concurrent write tests:
+```bash
+go test -v -run TestSourceCache_Concurrent ./internal/sourcemap/
+```
+
+Run all sourcemap tests:
+```bash
+go test -v ./internal/sourcemap/
+```
+
+## Technical Details
+
+### LockFileEx Flags Used
+- `LOCKFILE_EXCLUSIVE_LOCK (0x02)` - Exclusive/write lock
+- `LOCKFILE_FAIL_IMMEDIATELY` - Not used (blocking with retry)
+
+### Windows API Calls
+- `windows.LockFileEx()` - Acquire file lock
+- `windows.UnlockFile()` - Release file lock
+- `windows.SetHandleInformation()` - Set HANDLE_FLAG_INHERIT=0
+
+### Compatibility
+- Uses `golang.org/x/sys/windows` (Go stdlib, available since Go 1.17)
+- No external dependencies added
+- Transparent to existing SourceMapCache logic
+
+## Breaking Changes
+
+None. The implementation is transparent to the rest of the SourceMapCache logic and maintains the same interface.
+
+## Backwards Compatibility
+
+The Windows lock file format is compatible with Unix lock files (`.lock` extension). Existing lock files from the no-op implementation are simply overwritten with proper locks.
