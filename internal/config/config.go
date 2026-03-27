@@ -5,11 +5,9 @@ package config
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/dotandev/hintents/internal/errors"
 )
@@ -145,6 +143,26 @@ func (c *Config) MergeDefaults() {
 	configDefaultsAssigner{}.Apply(c)
 }
 
+func (c *Config) WithSimulatorPath(path string) *Config {
+	c.SimulatorPath = path
+	return c
+}
+
+func (c *Config) WithLogLevel(level string) *Config {
+	c.LogLevel = level
+	return c
+}
+
+func (c *Config) WithCachePath(path string) *Config {
+	c.CachePath = path
+	return c
+}
+
+func (c *Config) WithRequestTimeout(timeout int) *Config {
+	c.RequestTimeout = timeout
+	return c
+}
+
 func (c *Config) Validate() error {
 	validators := []Validator{
 		RPCValidator{},
@@ -152,6 +170,7 @@ func (c *Config) Validate() error {
 		SimulatorValidator{},
 		LogLevelValidator{},
 		TimeoutValidator{},
+		MaxTraceDepthValidator{},
 		CrashReportingValidator{},
 	}
 	for _, v := range validators {
@@ -177,15 +196,19 @@ func (c *Config) NetworkURL() string {
 	}
 }
 
+func (c *Config) String() string {
+	data, _ := json.MarshalIndent(c, "", "  ")
+	return string(data)
+}
+
 // -- Load/Save Config --
 
 func GetGeneralConfigPath() (string, error) {
-	// Assumes GetConfigPath is defined in your networks.go
-	configDir, err := os.UserConfigDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "erst", "config.json"), nil
+	return filepath.Join(home, ".erst", "config.json"), nil
 }
 
 func LoadConfig() (*Config, error) {
@@ -254,7 +277,6 @@ func (envParser) Parse(cfg *Config) error {
 		cfg.RPCToken = v
 	}
 	if v := os.Getenv("ERST_MAX_CACHE_SIZE"); v != "" {
-		// Note: parseSize helper usually defined in parse.go
 		n, _ := strconv.ParseInt(v, 10, 64)
 		if n > 0 {
 			cfg.MaxCacheSize = n
@@ -270,51 +292,32 @@ func (envParser) Parse(cfg *Config) error {
 			cfg.MaxTraceDepth = n
 		}
 	}
+	if v := os.Getenv("ERST_CRASH_REPORTING"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.CrashReporting = b
+		}
+	}
+	if v := os.Getenv("ERST_CRASH_ENDPOINT"); v != "" {
+		cfg.CrashEndpoint = v
+	}
+	if v := os.Getenv("ERST_SENTRY_DSN"); v != "" {
+		cfg.CrashSentryDSN = v
+	}
+	if v := os.Getenv("ERST_RPC_URLS"); v != "" {
+		cfg.RpcUrls = splitAndTrim(v)
+	}
 	return nil
 }
 
 type fileParser struct{}
 
 func (fileParser) Parse(cfg *Config) error {
-	// Implementation usually calls loadTOML defined in parse.go
-	return nil
+	return cfg.loadFromFile()
 }
 
 // -- Validators --
 
 type RPCValidator struct{}
-
-func (RPCValidator) Validate(cfg *Config) error {
-	if cfg.RpcUrl == "" {
-		return errors.WrapValidationError("rpc_url cannot be empty")
-	}
-	return nil
-}
-
-type NetworkValidator struct{}
-
-func (NetworkValidator) Validate(cfg *Config) error {
-	if cfg.Network != "" && !validNetworks[string(cfg.Network)] {
-		return errors.WrapInvalidNetwork(string(cfg.Network))
-	}
-	return nil
-}
-
-type SimulatorValidator struct{}
-
-func (SimulatorValidator) Validate(cfg *Config) error { return nil }
-
-type LogLevelValidator struct{}
-
-func (LogLevelValidator) Validate(cfg *Config) error { return nil }
-
-type TimeoutValidator struct{}
-
-func (TimeoutValidator) Validate(cfg *Config) error { return nil }
-
-type CrashReportingValidator struct{}
-
-func (CrashReportingValidator) Validate(cfg *Config) error { return nil }
 
 type configDefaultsAssigner struct{}
 
@@ -327,6 +330,9 @@ func (configDefaultsAssigner) Apply(cfg *Config) {
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = defaultConfig.LogLevel
+	}
+	if cfg.CachePath == "" {
+		cfg.CachePath = defaultConfig.CachePath
 	}
 	if cfg.RequestTimeout == 0 {
 		cfg.RequestTimeout = defaultRequestTimeout
