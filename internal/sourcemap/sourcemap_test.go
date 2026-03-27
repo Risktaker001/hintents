@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -582,6 +584,165 @@ func TestSourceCache_CorruptEntry(t *testing.T) {
 	got := cache.Get("CAS3J7GYCCX3S7LX63P6R7EAL477J26C356X6E5A4XERAD7UXD6I7Y3N")
 	if got != nil {
 		t.Fatal("expected nil for corrupt cache entry")
+	}
+}
+
+// TestSourceCache_ConcurrentWrites tests that concurrent writes to the same
+// cache entry are serialized properly using file locks, preventing corruption.
+// This test is particularly important on Windows where flock is a no-op.
+func TestSourceCache_ConcurrentWrites(t *testing.T) {
+	cacheDir := t.TempDir()
+	cache, err := NewSourceCache(cacheDir)
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+
+	contractID := "CAS3J7GYCCX3S7LX63P6R7EAL477J26C356X6E5A4XERAD7UXD6I7Y3N"
+	numWriters := 10
+	writesPerWriter := 5
+
+	// Track which writes succeeded
+	successCount := make(chan bool, numWriters*writesPerWriter)
+	errChan := make(chan error, numWriters*writesPerWriter)
+
+	// Start concurrent writers
+	var wg sync.WaitGroup
+	for w := 0; w < numWriters; w++ {
+		wg.Add(1)
+		go func(writerID int) {
+			defer wg.Done()
+			for i := 0; i < writesPerWriter; i++ {
+				source := &SourceCode{
+					ContractID: contractID,
+					WasmHash:   fmt.Sprintf("hash_writer%d_write%d", writerID, i),
+					Files: map[string]string{
+						"src/lib.rs": fmt.Sprintf("// writer %d, write %d", writerID, i),
+					},
+					FetchedAt: time.Now(),
+				}
+				if err := cache.Put(source); err != nil {
+					errChan <- fmt.Errorf("writer %d write %d: %w", writerID, i, err)
+					successCount <- false
+				} else {
+					successCount <- true
+				}
+			}
+		}(w)
+	}
+
+	// Wait for all writers to complete
+	wg.Wait()
+	close(successCount)
+	close(errChan)
+
+	// Collect results
+	totalErrors := 0
+	var errors []error
+	for err := range errChan {
+		errors = append(errors, err)
+		totalErrors++
+	}
+
+	// Check that we can read the final value without corruption
+	got := cache.Get(contractID)
+	if got == nil {
+		t.Fatal("expected non-nil cached source after concurrent writes")
+	}
+
+	// The WasmHash should be a valid hash format (not corrupted JSON or partial data)
+	if !strings.HasPrefix(got.WasmHash, "hash_") {
+		t.Errorf("WasmHash appears corrupted: %q", got.WasmHash)
+	}
+
+	// Verify file content is valid JSON (not corrupted)
+	if len(got.Files) != 1 {
+		t.Errorf("expected 1 file, got %d", len(got.Files))
+	}
+
+	// Log summary
+	successes := 0
+	for s := range successCount {
+		if s {
+			successes++
+		}
+	}
+
+	t.Logf("Concurrent write test: %d/%d writes succeeded, %d errors",
+		successes, numWriters*writesPerWriter, totalErrors)
+
+	if len(errors) > 0 {
+		t.Log("Errors encountered:")
+		for _, e := range errors {
+			t.Logf("  - %v", e)
+		}
+	}
+
+	// At minimum, we should not have any corruption (got should be valid)
+	// Note: On platforms with proper locking, all writes should succeed
+}
+
+// TestSourceCache_ConcurrentWritesDifferentEntries tests concurrent writes
+// to different cache entries don't interfere with each other.
+func TestSourceCache_ConcurrentWritesDifferentEntries(t *testing.T) {
+	cacheDir := t.TempDir()
+	cache, err := NewSourceCache(cacheDir)
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+
+	numEntries := 20
+	writesPerEntry := 5
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, numEntries*writesPerEntry)
+
+	for e := 0; e < numEntries; e++ {
+		wg.Add(1)
+		go func(entryID int) {
+			defer wg.Done()
+			contractID := fmt.Sprintf("C%055d", entryID)
+			for i := 0; i < writesPerEntry; i++ {
+				source := &SourceCode{
+					ContractID: contractID,
+					WasmHash:   fmt.Sprintf("hash_entry%d_write%d", entryID, i),
+					Files:      map[string]string{},
+					FetchedAt:  time.Now(),
+				}
+				if err := cache.Put(source); err != nil {
+					errChan <- fmt.Errorf("entry %d write %d: %w", entryID, i, err)
+				}
+			}
+		}(e)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	errorCount := 0
+	var errors []error
+	for err := range errChan {
+		errors = append(errors, err)
+		errorCount++
+	}
+
+	if errorCount > 0 {
+		t.Errorf("%d concurrent writes failed:", errorCount)
+		for _, e := range errors {
+			t.Logf("  - %v", e)
+		}
+	}
+
+	// Verify all entries are readable and valid
+	for e := 0; e < numEntries; e++ {
+		contractID := fmt.Sprintf("C%055d", e)
+		got := cache.Get(contractID)
+		if got == nil {
+			t.Errorf("entry %d not found in cache", e)
+			continue
+		}
+		if !strings.HasPrefix(got.WasmHash, "hash_entry") {
+			t.Errorf("entry %d has corrupted WasmHash: %q", e, got.WasmHash)
+		}
 	}
 }
 
