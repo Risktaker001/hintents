@@ -14,6 +14,10 @@ pub struct SimulationRequest {
     pub envelope_xdr: String,
     pub result_meta_xdr: String,
     pub ledger_entries: Option<HashMap<String, String>>,
+    /// Zstd-compressed, base64-encoded ledger_entries produced by the Go bridge.
+    /// When present, takes precedence over the plain `ledger_entries` field.
+    #[serde(default)]
+    pub ledger_entries_zstd: Option<String>,
     pub contract_wasm: Option<String>,
     pub wasm_path: Option<String>, // Added for local loading
     #[serde(default)]
