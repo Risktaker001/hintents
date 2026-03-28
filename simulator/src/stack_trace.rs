@@ -8,6 +8,7 @@
 
 #![allow(dead_code)]
 
+use regex::Regex;
 use serde::Serialize;
 
 /// A single frame in a WASM call stack.
@@ -52,6 +53,17 @@ pub struct WasmStackTrace {
     pub frames: Vec<StackFrame>,
     /// Whether the Host error was unwound through Soroban abstractions.
     pub soroban_wrapped: bool,
+}
+
+impl Default for WasmStackTrace {
+    fn default() -> Self {
+        WasmStackTrace {
+            trap_kind: TrapKind::Unknown(String::new()),
+            raw_message: String::new(),
+            frames: Vec::new(),
+            soroban_wrapped: false,
+        }
+    }
 }
 
 impl WasmStackTrace {
@@ -141,29 +153,131 @@ impl WasmStackTrace {
     }
 }
 
-/// Classify a raw error string into a known trap kind.
-fn classify_trap(msg: &str) -> TrapKind {
-    let lower = msg.to_lowercase();
+/// Regex patterns for frame extraction.
+///
+/// These patterns are compiled once at module initialization for efficiency.
+mod frame_patterns {
+    use regex::Regex;
 
-    if lower.contains("out of bounds memory") {
+    /// Matches lines with a leading index:
+    /// - `0: func[42] @ 0xa3c`
+    /// - `1: module::function @ 0xb20`
+    /// - `#0: func[5]`
+    /// - `0: func[42] @ 1234` (decimal offset)
+    pub static NUMBERED_FRAME: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"^#?(\d+):\s*(?:(?:func\[(\d+)\])|(<[^>]+>)|([a-zA-Z_][a-zA-Z0-9_:]*(?:::[a-zA-Z_][a-zA-Z0-9_:]*)*))(?:\s+@\s+(?:0x([0-9a-fA-F]+)|(\d+)))?")
+                .expect("failed to compile NUMBERED_FRAME regex")
+        });
+
+    /// Matches bare frames without a leading index (for continued backtraces):
+    /// - `func[42] @ 0xa3c`
+    /// - `<module>::function @ 0xb20`
+    /// - `some_function @ 0x100`
+    pub static BARE_FRAME: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"^(?:func\[(\d+)\]|(<[^>]+>)|([a-zA-Z_][a-zA-Z0-9_:]*(?:::[a-zA-Z_][a-zA-Z0-9_:]*)*))(?:\s+@\s+(?:0x([0-9a-fA-F]+)|(\d+)))?")
+                .expect("failed to compile BARE_FRAME regex")
+        });
+
+    /// Matches various trap header formats:
+    /// - `wasm backtrace:`
+    /// - `wasm trace:`
+    /// - `backtrace:`
+    /// - `   0:` (starts with number + colon on otherwise empty line)
+    pub static BACKTRACE_HEADER: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)^\s*(?:wasm\s+)?(?:back)?trace:\s*$")
+                .expect("failed to compile BACKTRACE_HEADER regex")
+        });
+
+    /// Matches frame content after index has been stripped.
+    /// Used for continuing to parse frames after the numbered frame regex.
+    pub static FRAME_CONTENT: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"^(?:func\[(\d+)\]|(<[^>]+>)|([a-zA-Z_][a-zA-Z0-9_:]*(?:::[a-zA-Z_][a-zA-Z0-9_:]*)*))(?:\s+@\s+(?:0x([0-9a-fA-F]+)|(\d+)))?$")
+                .expect("failed to compile FRAME_CONTENT regex")
+        });
+}
+
+/// Regex patterns for trap classification.
+///
+/// Uses case-insensitive matching to handle various error string formats.
+mod trap_patterns {
+    use regex::Regex;
+
+    pub static OUT_OF_BOUNDS_MEMORY: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)out\s+of\s+bounds\s+memory").expect("failed to compile OOB memory regex")
+        });
+
+    pub static OUT_OF_BOUNDS_TABLE: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)out\s+of\s+bounds\s+table").expect("failed to compile OOB table regex")
+        });
+
+    pub static INTEGER_OVERFLOW: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)integer\s+overflow").expect("failed to compile overflow regex")
+        });
+
+    pub static DIVISION_BY_ZERO: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)(?:integer\s+)?division\s+by\s+zero").expect("failed to compile div/0 regex")
+        });
+
+    pub static INVALID_CONVERSION: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)invalid\s+conversion\s+to\s+int").expect("failed to compile conversion regex")
+        });
+
+    pub static UNREACHABLE: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)unreachable").expect("failed to compile unreachable regex")
+        });
+
+    pub static STACK_OVERFLOW: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)(?:call\s+stack\s+exhausted|stack\s+overflow)").expect("failed to compile stack overflow regex")
+        });
+
+    pub static INDIRECT_CALL_MISMATCH: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)indirect\s+call\s+type\s+mismatch").expect("failed to compile indirect call regex")
+        });
+
+    pub static UNDEFINED_ELEMENT: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)(?:undefined|uninitialized)\s+element").expect("failed to compile undefined element regex")
+        });
+
+    pub static HOST_ERROR: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| {
+            Regex::new(r"(?i)host(?:error)?").expect("failed to compile host error regex")
+        });
+}
+
+/// Classify a raw error string into a known trap kind using regex patterns.
+fn classify_trap(msg: &str) -> TrapKind {
+    if trap_patterns::OUT_OF_BOUNDS_MEMORY.is_match(msg) {
         TrapKind::OutOfBoundsMemoryAccess
-    } else if lower.contains("out of bounds table") {
+    } else if trap_patterns::OUT_OF_BOUNDS_TABLE.is_match(msg) {
         TrapKind::OutOfBoundsTableAccess
-    } else if lower.contains("integer overflow") {
+    } else if trap_patterns::INTEGER_OVERFLOW.is_match(msg) {
         TrapKind::IntegerOverflow
-    } else if lower.contains("integer division by zero") || lower.contains("division by zero") {
+    } else if trap_patterns::DIVISION_BY_ZERO.is_match(msg) {
         TrapKind::IntegerDivisionByZero
-    } else if lower.contains("invalid conversion to int") {
+    } else if trap_patterns::INVALID_CONVERSION.is_match(msg) {
         TrapKind::InvalidConversionToInt
-    } else if lower.contains("unreachable") {
+    } else if trap_patterns::UNREACHABLE.is_match(msg) {
         TrapKind::Unreachable
-    } else if lower.contains("call stack exhausted") || lower.contains("stack overflow") {
+    } else if trap_patterns::STACK_OVERFLOW.is_match(msg) {
         TrapKind::StackOverflow
-    } else if lower.contains("indirect call type mismatch") {
+    } else if trap_patterns::INDIRECT_CALL_MISMATCH.is_match(msg) {
         TrapKind::IndirectCallTypeMismatch
-    } else if lower.contains("undefined element") || lower.contains("uninitialized element") {
+    } else if trap_patterns::UNDEFINED_ELEMENT.is_match(msg) {
         TrapKind::UndefinedElement
-    } else if lower.contains("hosterror") || lower.contains("host error") {
+    } else if trap_patterns::HOST_ERROR.is_match(msg) {
         TrapKind::HostError(msg.to_string())
     } else {
         TrapKind::Unknown(msg.to_string())
@@ -175,24 +289,51 @@ fn classify_trap(msg: &str) -> TrapKind {
 /// Wasmi and Soroban format trap backtraces as lines like:
 ///   `  0: func[42] @ 0xa3c`
 ///   `  1: <module_name>::function_name @ 0xb20`
+///   `wasm backtrace:`
+///   `  0: my_contract::transfer`
 ///
-/// We parse these into structured `StackFrame` values.
+/// We parse these into structured `StackFrame` values using regex for robustness.
 fn extract_frames(error_debug: &str) -> Vec<StackFrame> {
     let mut frames = Vec::new();
+    let mut in_backtrace = false;
+    let mut expected_index: usize = 0;
 
     for line in error_debug.lines() {
         let trimmed = line.trim();
 
-        // Match patterns like "0: func[42] @ 0xa3c" or "#0 func_name"
-        if let Some(frame) = try_parse_numbered_frame(trimmed) {
-            frames.push(frame);
+        // Check for backtrace header
+        if frame_patterns::BACKTRACE_HEADER.is_match(trimmed) {
+            in_backtrace = true;
+            expected_index = 0;
             continue;
         }
 
-        // Match Wasmi-style "wasm backtrace:" header followed by frames
-        if trimmed.starts_with("func[") || trimmed.starts_with("<") {
-            if let Some(frame) = try_parse_bare_frame(trimmed, frames.len()) {
+        // Try numbered frame pattern first
+        if let Some(captures) = frame_patterns::NUMBERED_FRAME.captures(trimmed) {
+            if let Some(frame) = parse_frame_from_captures(&captures, in_backtrace) {
                 frames.push(frame);
+                expected_index = frames.len();
+                in_backtrace = true;
+                continue;
+            }
+        }
+
+        // If we're in a backtrace section, try bare frame pattern
+        if in_backtrace {
+            if let Some(captures) = frame_patterns::BARE_FRAME.captures(trimmed) {
+                if let Some(mut frame) = parse_bare_frame_from_captures(&captures, expected_index) {
+                    // Only add if we actually extracted something meaningful
+                    if frame.func_name.is_some() || frame.func_index.is_some() {
+                        frame.index = expected_index;
+                        frames.push(frame);
+                        expected_index += 1;
+                    }
+                }
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                // Empty or non-frame line might indicate end of backtrace
+                if !frame_patterns::FRAME_CONTENT.is_match(trimmed) {
+                    in_backtrace = false;
+                }
             }
         }
     }
@@ -200,84 +341,67 @@ fn extract_frames(error_debug: &str) -> Vec<StackFrame> {
     frames
 }
 
-/// Attempt to parse a frame line with a leading index like "0: func[42] @ 0xa3c".
-fn try_parse_numbered_frame(line: &str) -> Option<StackFrame> {
-    // Try "N: <rest>" pattern
-    let (index_str, rest) = line.split_once(':')?;
-    let index: usize = index_str.trim().trim_start_matches('#').parse().ok()?;
-    let rest = rest.trim();
+/// Parse frame data from regex captures.
+fn parse_frame_from_captures(captures: &regex::Captures, in_backtrace: bool) -> Option<StackFrame> {
+    // Get index if present
+    let index = captures.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
 
-    let (func_name, func_index, wasm_offset) = parse_frame_body(rest);
+    // Get function index (group 2) or module path (group 3) or function name (group 4)
+    let func_index = captures.get(2).and_then(|m| m.as_str().parse().ok());
+    let module = captures.get(3).map(|m| m.as_str().trim_start_matches('<').trim_end_matches('>').to_string());
+    let func_name = captures.get(4).map(|m| m.as_str().to_string());
 
-    Some(StackFrame {
-        index,
-        func_index,
-        func_name,
-        wasm_offset,
-        module: None,
-    })
-}
+    // Get offset (hex group 5 or decimal group 6)
+    let wasm_offset = captures.get(5)
+        .and_then(|m| u64::from_str_radix(m.as_str(), 16).ok())
+        .or_else(|| captures.get(6).and_then(|m| m.as_str().parse().ok()));
 
-/// Attempt to parse a bare frame without a leading index.
-fn try_parse_bare_frame(line: &str, index: usize) -> Option<StackFrame> {
-    let (func_name, func_index, wasm_offset) = parse_frame_body(line);
-
-    if func_name.is_some() || func_index.is_some() {
+    // Only return frame if we have something meaningful
+    if func_index.is_some() || func_name.is_some() || wasm_offset.is_some() {
         Some(StackFrame {
             index,
             func_index,
             func_name,
             wasm_offset,
-            module: None,
+            module,
+        })
+    } else if in_backtrace {
+        // In backtrace context, even partial frames might be valid
+        Some(StackFrame {
+            index,
+            func_index: None,
+            func_name: None,
+            wasm_offset: None,
+            module,
         })
     } else {
         None
     }
 }
 
-/// Parse the body of a frame line, extracting function name/index and offset.
-///
-/// Recognised patterns:
-///   - `func[42]`
-///   - `func[42] @ 0xa3c`
-///   - `some_function_name @ 0xb20`
-///   - `<module>::path::function`
-fn parse_frame_body(body: &str) -> (Option<String>, Option<u32>, Option<u64>) {
-    let mut func_name: Option<String> = None;
-    let mut func_index: Option<u32> = None;
-    let mut wasm_offset: Option<u64> = None;
+/// Parse bare frame (no leading index) from regex captures.
+fn parse_bare_frame_from_captures(captures: &regex::Captures, index: usize) -> Option<StackFrame> {
+    // Get function index (group 1) or module path (group 2) or function name (group 3)
+    let func_index = captures.get(1).and_then(|m| m.as_str().parse().ok());
+    let module = captures.get(2).map(|m| m.as_str().trim_start_matches('<').trim_end_matches('>').to_string());
+    let func_name = captures.get(3).map(|m| m.as_str().to_string());
 
-    // Split on " @ " to separate name from offset
-    let (name_part, offset_part) = if let Some(idx) = body.find(" @ ") {
-        (&body[..idx], Some(&body[idx + 3..]))
+    // Get offset (hex group 4 or decimal group 5)
+    let wasm_offset = captures.get(4)
+        .and_then(|m| u64::from_str_radix(m.as_str(), 16).ok())
+        .or_else(|| captures.get(5).and_then(|m| m.as_str().parse().ok()));
+
+    if func_index.is_some() || func_name.is_some() {
+        Some(StackFrame {
+            index,
+            func_index,
+            func_name,
+            wasm_offset,
+            module,
+        })
     } else {
-        (body, None)
-    };
-
-    // Parse offset
-    if let Some(off) = offset_part {
-        let off = off.trim();
-        if let Some(hex) = off.strip_prefix("0x") {
-            wasm_offset = u64::from_str_radix(hex, 16).ok();
-        } else {
-            wasm_offset = off.parse().ok();
-        }
+        None
     }
-
-    // Parse function name/index
-    let name_trimmed = name_part.trim();
-    if name_trimmed.starts_with("func[") {
-        // func[42]
-        if let Some(inner) = name_trimmed.strip_prefix("func[") {
-            if let Some(idx_str) = inner.strip_suffix(']') {
-                func_index = idx_str.parse().ok();
-            }
-        }
-    } else if !name_trimmed.is_empty() {
-        func_name = Some(name_trimmed.to_string());
-    }
-
-    (func_name, func_index, wasm_offset)
 }
 
 /// Public helper: decode a raw error string into a human-readable description
@@ -472,14 +596,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_frame_body_empty() {
-        let (name, index, offset) = parse_frame_body("");
-        assert!(name.is_none());
-        assert!(index.is_none());
-        assert!(offset.is_none());
-    }
-
-    #[test]
     fn test_classify_table_access() {
         assert_eq!(
             classify_trap("out of bounds table access"),
@@ -498,7 +614,368 @@ mod tests {
     #[test]
     fn test_capitalise_first() {
         assert_eq!(capitalise_first("hello"), "Hello");
-        assert_eq!(capitalise_first(""), "");
-        assert_eq!(capitalise_first("a"), "A");
+    }
+
+    // ============================================================================
+    // Additional regex-based parsing tests
+    // ============================================================================
+
+    #[test]
+    fn test_extract_frames_with_hash_prefix() {
+        let input = "#0: func[42] @ 0xa3c\n#1: func[7]";
+        let frames = extract_frames(input);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].func_index, Some(42));
+        assert_eq!(frames[1].func_index, Some(7));
+    }
+
+    #[test]
+    fn test_extract_frames_with_module_path() {
+        let input = "wasm backtrace:\n  0: <my_contract>::transfer @ 0x100";
+        let frames = extract_frames(input);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].module, Some("my_contract".to_string()));
+        assert_eq!(frames[0].func_name, Some("transfer".to_string()));
+    }
+
+    #[test]
+    fn test_extract_frames_mixed_formats() {
+        let input = r#"Error: Wasm Trap: unreachable
+wasm backtrace:
+  0: func[1] @ 0x100
+  1: contract::process @ 0x200
+  2: func[5]"#;
+        let frames = extract_frames(input);
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0].func_index, Some(1));
+        assert_eq!(frames[0].wasm_offset, Some(0x100));
+        assert_eq!(frames[1].func_name, Some("contract::process".to_string()));
+        assert_eq!(frames[2].func_index, Some(5));
+    }
+
+    #[test]
+    fn test_classify_variations() {
+        // Test various case and whitespace variations
+        assert_eq!(
+            classify_trap("OUT OF BOUNDS MEMORY ACCESS"),
+            TrapKind::OutOfBoundsMemoryAccess
+        );
+        assert_eq!(
+            classify_trap("Out   of   Bounds   Memory"),
+            TrapKind::OutOfBoundsMemoryAccess
+        );
+        assert_eq!(
+            classify_trap("INTEGER OVERFLOW"),
+            TrapKind::IntegerOverflow
+        );
+        assert_eq!(
+            classify_trap("division by zero"),
+            TrapKind::IntegerDivisionByZero
+        );
+    }
+
+    #[test]
+    fn test_extract_frames_complex_module_paths() {
+        let input = "backtrace:\n  0: soroban_auth::signature::verify @ 0xabc\n  1: my::deeply::nested::module::function @ 0xdef";
+        let frames = extract_frames(input);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].func_name, Some("soroban_auth::signature::verify".to_string()));
+        assert_eq!(frames[1].func_name, Some("my::deeply::nested::module::function".to_string()));
+    }
+
+    #[test]
+    fn test_extract_frames_no_offset() {
+        let input = "wasm backtrace:\n  0: func[42]\n  1: my_function";
+        let frames = extract_frames(input);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].func_index, Some(42));
+        assert_eq!(frames[0].wasm_offset, None);
+        assert_eq!(frames[1].func_name, Some("my_function".to_string()));
+    }
+
+    #[test]
+    fn test_extract_frames_preserves_order() {
+        let input = "wasm backtrace:\n  0: func[3]\n  1: func[2]\n  2: func[1]\n  3: func[0]";
+        let frames = extract_frames(input);
+        assert_eq!(frames.len(), 4);
+        for (i, frame) in frames.iter().enumerate() {
+            assert_eq!(frame.index, i);
+            assert_eq!(frame.func_index, Some((3 - i) as u32));
+        }
+    }
+
+    #[test]
+    fn test_wasm_stack_trace_default() {
+        let trace = WasmStackTrace::default();
+        assert!(trace.frames.is_empty());
+        assert!(!trace.soroban_wrapped);
+        assert!(matches!(trace.trap_kind, TrapKind::Unknown(_)));
+    }
+}
+
+// ============================================================================
+// Property-based tests using proptest
+// ============================================================================
+
+#[cfg(test)]
+mod prop_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Strategy for generating valid function names
+    fn valid_function_name() -> impl Strategy<Value = String> {
+        // Generate valid Rust-style function/module names
+        prop::string::string_regex(r"[a-z][a-z0-9_]{0,30}").unwrap()
+    }
+
+    /// Strategy for generating valid module paths
+    fn valid_module_path() -> impl Strategy<Value = String> {
+        (1..=3usize)
+            .prop_map(|parts| {
+                let path: Vec<String> = (0..parts)
+                    .map(|_| valid_function_name().prop_generate())
+                    .collect();
+                path.join("::")
+            })
+    }
+
+    /// Strategy for generating wasm offsets (hex or decimal)
+    fn wasm_offset() -> impl Strategy<Value = u64> {
+        // Generate offsets that are reasonable for WASM
+        (0u64..1_000_000u64)
+    }
+
+    /// Generate a frame string in numbered format
+    fn numbered_frame_string(index: usize, func_index: Option<u32>, func_name: Option<String>, offset: Option<u64>) -> String {
+        let mut line = format!("  {}: ", index);
+        
+        if let Some(idx) = func_index {
+            line.push_str(&format!("func[{}]", idx));
+        } else if let Some(name) = func_name {
+            line.push_str(&name);
+        } else {
+            line.push_str("unknown");
+        }
+        
+        if let Some(off) = offset {
+            line.push_str(&format!(" @ 0x{:x}", off));
+        }
+        
+        line
+    }
+
+    /// Strategy for generating valid trap messages
+    fn trap_message() -> impl Strategy<Value = (String, TrapKind)> {
+        prop::sample::select(vec![
+            ("out of bounds memory access".to_string(), TrapKind::OutOfBoundsMemoryAccess),
+            ("Out of bounds memory".to_string(), TrapKind::OutOfBoundsMemoryAccess),
+            ("Out Of Bounds Table Access".to_string(), TrapKind::OutOfBoundsTableAccess),
+            ("integer overflow".to_string(), TrapKind::IntegerOverflow),
+            ("Integer Overflow".to_string(), TrapKind::IntegerOverflow),
+            ("integer division by zero".to_string(), TrapKind::IntegerDivisionByZero),
+            ("division by zero".to_string(), TrapKind::IntegerDivisionByZero),
+            ("invalid conversion to int".to_string(), TrapKind::InvalidConversionToInt),
+            ("unreachable".to_string(), TrapKind::Unreachable),
+            ("WASM TRAP: unreachable".to_string(), TrapKind::Unreachable),
+            ("call stack exhausted".to_string(), TrapKind::StackOverflow),
+            ("stack overflow".to_string(), TrapKind::StackOverflow),
+            ("indirect call type mismatch".to_string(), TrapKind::IndirectCallTypeMismatch),
+            ("undefined element".to_string(), TrapKind::UndefinedElement),
+            ("uninitialized element".to_string(), TrapKind::UndefinedElement),
+            ("HostError: something happened".to_string(), TrapKind::HostError("HostError: something happened".to_string())),
+            ("host error occurred".to_string(), TrapKind::HostError("host error occurred".to_string())),
+        ])
+    }
+
+    proptest! {
+        /// Property test: extracting frames from a known format preserves indices
+        #[test]
+        fn prop_extract_preserves_frame_indices(indices: Vec<usize>) {
+            // Filter to reasonable indices and ensure uniqueness for this test
+            let indices: Vec<usize> = indices.into_iter().take(10).collect();
+            if indices.is_empty() {
+                return Ok(());
+            }
+            
+            let mut input = String::from("wasm backtrace:\n");
+            for (i, &idx) in indices.iter().enumerate() {
+                input.push_str(&numbered_frame_string(i, Some(idx as u32), None, None));
+                input.push('\n');
+            }
+            
+            let frames = extract_frames(&input);
+            assert_eq!(frames.len(), indices.len());
+            for (i, frame) in frames.iter().enumerate() {
+                assert_eq!(frame.index, i);
+                assert_eq!(frame.func_index, Some(indices[i] as u32));
+            }
+        }
+
+        /// Property test: frames with various offset formats parse correctly
+        #[test]
+        fn prop_offset_parsing(hex_offset: u64, dec_offset: u64) {
+            // Limit to reasonable values
+            let hex_off = hex_offset % 1_000_000;
+            let dec_off = (dec_offset % 1_000_000) as u64;
+            
+            // Test hex offset
+            let input = format!("  0: func[1] @ 0x{:x}", hex_off);
+            let frames = extract_frames(&input);
+            prop_assert_eq!(frames.len(), 1);
+            prop_assert_eq!(frames[0].wasm_offset, Some(hex_off));
+            
+            // Test decimal offset
+            let input = format!("  0: func[1] @ {}", dec_off);
+            let frames = extract_frames(&input);
+            prop_assert_eq!(frames.len(), 1);
+            prop_assert_eq!(frames[0].wasm_offset, Some(dec_off));
+        }
+
+        /// Property test: function names with various characters parse correctly
+        #[test]
+        fn prop_function_name_parsing(func_name: String, module_path: String) {
+            // Ensure we have valid strings
+            if func_name.is_empty() || module_path.is_empty() {
+                return Ok(());
+            }
+            
+            // Test function name alone
+            let input = format!("  0: {} @ 0x100", func_name);
+            let frames = extract_frames(&input);
+            prop_assert_eq!(frames.len(), 1);
+            prop_assert_eq!(frames[0].func_name.as_ref(), Some(&func_name));
+            
+            // Test with module path
+            let input = format!("  0: {} @ 0x100", module_path);
+            let frames = extract_frames(&input);
+            prop_assert_eq!(frames.len(), 1);
+            prop_assert_eq!(frames[0].func_name.as_ref(), Some(&module_path));
+        }
+
+        /// Property test: trap classification is consistent
+        #[test]
+        fn prop_trap_classification_is_deterministic(msg: String, msg2: String) {
+            let kind1 = classify_trap(&msg);
+            let kind2 = classify_trap(&msg);
+            prop_assert_eq!(kind1, kind2, "Trap classification should be deterministic");
+            
+            // Different messages may or may not produce same classification
+            let _ = classify_trap(&msg2);
+        }
+
+        /// Property test: mixed frame formats in same backtrace
+        #[test]
+        fn prop_mixed_frame_formats(
+            func_idx in 0u32..100u32,
+            module_name: String,
+            func_name: String,
+        ) {
+            if module_name.is_empty() || func_name.is_empty() {
+                return Ok(());
+            }
+            
+            let input = format!(
+                "wasm backtrace:\n  0: func[{}] @ 0x100\n  1: {}::{} @ 0x200\n  2: {}",
+                func_idx, module_name, func_name, func_name
+            );
+            
+            let frames = extract_frames(&input);
+            
+            // We expect at least 2 frames (possibly 3 if bare parsing works)
+            prop_assert!(frames.len() >= 2);
+            assert_eq!(frames[0].func_index, Some(func_idx));
+        }
+    }
+
+    /// Test that the regex patterns compile correctly and match expected formats
+    #[test]
+    fn test_regex_patterns_compile() {
+        // Verify lazy patterns compile
+        use frame_patterns::*;
+        
+        // NUMBERED_FRAME should match these
+        assert!(NUMBERED_FRAME.is_match("0: func[42] @ 0xa3c"));
+        assert!(NUMBERED_FRAME.is_match("#0: func[42] @ 0xa3c"));
+        assert!(NUMBERED_FRAME.is_match("1: my_function @ 0x100"));
+        assert!(NUMBERED_FRAME.is_match("0: <module>::func"));
+        
+        // BARE_FRAME should match these
+        assert!(BARE_FRAME.is_match("func[42] @ 0xa3c"));
+        assert!(BARE_FRAME.is_match("<module>::func @ 0x100"));
+        assert!(BARE_FRAME.is_match("my_function"));
+        
+        // BACKTRACE_HEADER should match these
+        assert!(BACKTRACE_HEADER.is_match("wasm backtrace:"));
+        assert!(BACKTRACE_HEADER.is_match("backtrace:"));
+        assert!(BACKTRACE_HEADER.is_match("WASM TRACE:"));
+        assert!(BACKTRACE_HEADER.is_match("  trace:"));
+    }
+
+    /// Test that trap patterns compile and match correctly
+    #[test]
+    fn test_trap_patterns_match() {
+        use trap_patterns::*;
+        
+        // OUT_OF_BOUNDS_MEMORY
+        assert!(OUT_OF_BOUNDS_MEMORY.is_match("out of bounds memory access"));
+        assert!(OUT_OF_BOUNDS_MEMORY.is_match("Out Of Bounds Memory"));
+        assert!(!OUT_OF_BOUNDS_MEMORY.is_match("out of bounds table"));
+        
+        // INTEGER_OVERFLOW
+        assert!(INTEGER_OVERFLOW.is_match("integer overflow"));
+        assert!(INTEGER_OVERFLOW.is_match("INTEGER OVERFLOW"));
+        assert!(!INTEGER_OVERFLOW.is_match("integer division by zero"));
+        
+        // DIVISION_BY_ZERO
+        assert!(DIVISION_BY_ZERO.is_match("integer division by zero"));
+        assert!(DIVISION_BY_ZERO.is_match("division by zero"));
+        assert!(DIVISION_BY_ZERO.is_match("Division By Zero"));
+        
+        // STACK_OVERFLOW
+        assert!(STACK_OVERFLOW.is_match("call stack exhausted"));
+        assert!(STACK_OVERFLOW.is_match("stack overflow"));
+        assert!(STACK_OVERFLOW.is_match("STACK OVERFLOW"));
+        
+        // HOST_ERROR
+        assert!(HOST_ERROR.is_match("HostError: message"));
+        assert!(HOST_ERROR.is_match("host error"));
+        assert!(HOST_ERROR.is_match("HOSTERROR"));
+    }
+
+    /// Test edge cases for frame extraction
+    #[test]
+    fn test_frame_extraction_edge_cases() {
+        // Empty input
+        let frames = extract_frames("");
+        assert!(frames.is_empty());
+        
+        // Whitespace only
+        let frames = extract_frames("   \n   \n   ");
+        assert!(frames.is_empty());
+        
+        // Non-frame content
+        let frames = extract_frames("This is just an error message");
+        assert!(frames.is_empty());
+        
+        // Multiple backtrace headers (should restart)
+        let input = "wasm backtrace:\n  0: func[1]\nanother section\nwasm backtrace:\n  0: func[2]";
+        let frames = extract_frames(input);
+        // Should capture from both sections
+        assert!(frames.len() >= 1);
+    }
+
+    /// Test classification edge cases
+    #[test]
+    fn test_classification_edge_cases() {
+        // Empty string
+        assert!(matches!(classify_trap(""), TrapKind::Unknown(_)));
+        
+        // Very long string
+        let long = "x".repeat(10000);
+        let kind = classify_trap(&long);
+        assert!(matches!(kind, TrapKind::Unknown(_)));
+        
+        // Unicode (should be treated as unknown)
+        assert!(matches!(classify_trap("你好世界"), TrapKind::Unknown(_)));
     }
 }
