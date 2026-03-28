@@ -281,7 +281,9 @@ impl SourceMapCache {
         // writers from clobbering each other's tmp file (critical on Windows
         // where flock is a no-op).
         let tmp_id = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp_path = self.cache_dir.join(format!("{}.{}.tmp", entry.wasm_hash, tmp_id));
+        let tmp_path = self
+            .cache_dir
+            .join(format!("{}.{}.tmp", entry.wasm_hash, tmp_id));
         let write_result = (|| {
             let mut file = File::create(&tmp_path)
                 .map_err(|e| format!("Failed to create temp cache file {:?}: {}", tmp_path, e))?;
